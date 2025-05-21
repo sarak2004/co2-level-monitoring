@@ -1,116 +1,77 @@
 import streamlit as st
-from simulator import simulate_co2
 import streamlit.components.v1 as components
 
+# --- Simulate CO₂ level based on health parameters ---
+def simulate_co2(respiration_rate, heart_rate, spo2, people_count, max_people):
+    if respiration_rate > 25 or spo2 < 90 or heart_rate < 62 or heart_rate > 100 or people_count > max_people:
+        return 1000, "Critical"
+    elif respiration_rate > 18 or spo2 < 95 or heart_rate >= 100 or people_count == max_people:
+        return 700, "Warning"
+    else:
+        return 400, "Normal"
+
+# --- Get max people based on area ---
+def get_max_people(area):
+    if area <= 100:
+        return 4
+    elif area <= 150:
+        return 6
+    elif area <= 300:
+        return 10
+    elif area <= 500:
+        return 15
+    else:
+        return 25
+
+# --- Streamlit UI ---
+st.set_page_config(page_title="CO₂ Room Safety Monitor", page_icon="🫁")
 st.title("🫁 CO₂ Level + Room Safety Simulation")
 
-# --- Room Safety Section ---
+# --- Room Occupancy ---
 st.subheader("🏠 Room & Occupancy Details")
-col1, col2 = st.columns(2)
-with col1:
-    room_length = st.number_input("Room Length (ft)", min_value=10, max_value=50, value=10, step=5)
-with col2:
-    room_width = st.number_input("Room Width (ft)", min_value=10, max_value=50, value=10, step=5)
-
+room_length = st.number_input("Room Length (ft)", min_value=10, max_value=50, value=10, step=5)
+room_width = st.number_input("Room Width (ft)", min_value=10, max_value=50, value=10, step=5)
 people_count = st.number_input("Number of People in the Room", min_value=1, step=1)
+
 room_area = room_length * room_width
+max_people = get_max_people(room_area)
 
-# Calculate max occupancy (1 person per 25 sq ft)
-max_people = max(1, int(room_area / 25))
+st.write(f"🧮 Room Area: {room_area} sq ft")
+st.write(f"👥 Max Recommended Occupancy: {max_people} people")
 
-st.info(f"""
-🧮 *Room Area:* {room_area} sq ft  
-👥 *Max Recommended Occupancy:* {max_people} people  
-👤 *Current Occupancy:* {people_count} people
-""")
+# --- Check overcrowding ---
+if people_count > max_people:
+    st.error(f"🚨 Overcrowded! Room has {people_count} people (limit is {max_people}).")
+elif people_count == max_people:
+    st.warning(f"🚨 Room has {people_count} people, Limit Reached.")
+else:
+    st.info("✅ Occupancy is within safe limit.")
 
-# --- Health Monitoring Section ---
-st.subheader("🧍 Health Parameters")
+# --- Health Parameters ---
+st.subheader("🧍 Health Monitoring")
 respiration_rate = st.slider("Respiration Rate (breaths/min)", 10, 40, 16)
 heart_rate = st.slider("Heart Rate (bpm)", 50, 160, 75)
 spo2 = st.slider("Oxygen Saturation (%)", 80, 100, 98)
 
 # --- Simulate CO₂ level ---
-co2_level, status = simulate_co2(respiration_rate, heart_rate, spo2)
+co2_level, status = simulate_co2(respiration_rate, heart_rate, spo2, people_count, max_people)
 
-# Adjust status based on room occupancy
-if people_count > max_people:
-    status = "Critical"  # Overcrowding takes highest priority
-elif people_count == max_people and status == "Normal":
-    status = "Warning"  # At capacity raises warning
+# --- Display results ---
+st.metric("Simulated CO₂ Level", f"{co2_level} ppm")
+st.metric("Status", status)
 
-# --- Display Results ---
-st.subheader("🌬 Air Quality Status")
-col1, col2 = st.columns(2)
-with col1:
-    st.metric("CO₂ Level", f"{co2_level} ppm")
-with col2:
-    if status == "Critical":
-        st.metric("Status", "CRITICAL", delta_color="off")
-    elif status == "Warning":
-        st.metric("Status", "WARNING", delta_color="off")
-    else:
-        st.metric("Status", "NORMAL", delta_color="off")
-
-# --- Status Alerts ---
-if status == "Critical":
-    st.error("""
-    🚨 CRITICAL ALERT! 
-    - CO₂ levels dangerously high
-    - Room is overcrowded (if applicable)
-    - Immediate action required!
-    """)
+# --- Alarm for CO₂ status (Web-compatible logic only) ---
+if status == "Critical" or people_count > max_people:
+    st.error("⚠ Critical CO₂ Level! Immediate action required!")
     
-    # Play alarm sound (loop until conditions improve)
+    # HTML-based audio alarm (autoplay)
     components.html("""
-    <audio autoplay loop>
-        <source src="https://assets.mixkit.co/sfx/preview/mixkit-alarm-digital-clock-beep-989.mp3" type="audio/mpeg">
-        Your browser does not support the audio element.
-    </audio>
-    <script>
-    document.querySelector('audio').play();
-    </script>
+        <audio autoplay>
+            <source src="https://raw.githubusercontent.com/prasanna24062004/co2-monitor-app/main/alarm.mp3" type="audio/mpeg">
+        </audio>
     """, height=0)
 
-elif status == "Warning":
-    st.warning("""
-    ⚠ WARNING 
-    - Elevated CO₂ levels detected
-    - Room at maximum capacity (if applicable)
-    - Monitor closely
-    """)
-    
-    # Single beep for warning
-    components.html("""
-    <audio autoplay>
-        <source src="https://assets.mixkit.co/sfx/preview/mixkit-alarm-digital-clock-beep-989.mp3" type="audio/mpeg">
-    </audio>
-    """, height=0)
+elif status == "Warning" or people_count == max_people:
+    st.warning("🚨 Elevated CO₂ Level! Monitor closely.")
 else:
-    st.success("✅ All parameters normal - Safe environment")
-
-# --- Room Safety Alerts ---
-if people_count > max_people:
-    st.error(f"🚨 OVERCROWDING: {people_count} people in {room_area} sq ft (max {max_people})")
-elif people_count == max_people:
-    st.warning(f"⚠ AT CAPACITY: {people_count} people (max {max_people})")
-
-# Manual alarm controls
-st.subheader("🔊 Alarm Controls")
-if st.button("Test Alarm"):
-    components.html("""
-    <audio autoplay>
-        <source src="https://assets.mixkit.co/sfx/preview/mixkit-alarm-digital-clock-beep-989.mp3" type="audio/mpeg">
-    </audio>
-    """, height=0)
-
-if st.button("Stop Alarm"):
-    components.html("""
-    <script>
-    var audios = document.getElementsByTagName('audio');
-    for (var i = 0; i < audios.length; i++) {
-        audios[i].pause();
-        audios[i].currentTime = 0;
-    }
-    </script>
-    """, height=0)
+    st.success("✅ CO₂ Level is Normal.")
