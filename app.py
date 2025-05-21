@@ -23,7 +23,7 @@ def get_max_people(area):
     else:
         return 25
 
-# --- Function to play audio in hidden HTML ---
+# --- HTML Audio Autoplay Function ---
 def autoplay_audio(file_path):
     with open(file_path, "rb") as f:
         audio_data = f.read()
@@ -75,7 +75,10 @@ st.metric("Status", status)
 if status == "Critical" or people_count > max_people:
     st.error("⚠ Critical CO₂ Level! Immediate action required!")
     autoplay_audio("alarm.mp3")
-elif status == "Warning" or people_count == max_people:
-    st.warning("🚨 Elevated CO₂ Level! Monitor closely.")
 else:
-    st.success("✅ CO₂ Level is Normal.")
+    # Use a 1-second silent MP3 to stop alarm
+    autoplay_audio("silent.mp3")
+    if status == "Warning" or people_count == max_people:
+        st.warning("🚨 Elevated CO₂ Level! Monitor closely.")
+    else:
+        st.success("✅ CO₂ Level is Normal.")
