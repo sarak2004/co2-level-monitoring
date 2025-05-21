@@ -1,14 +1,36 @@
 import streamlit as st
-import base64
+import time
+import numpy as np
+from datetime import datetime
+
+# Configuration
+CO2_CRITICAL_THRESHOLD = 800  # ppm
+CO2_WARNING_THRESHOLD = 600   # ppm
+CHECK_INTERVAL = 5  # seconds between checks
 
 # --- Simulate CO₂ level based on health parameters ---
 def simulate_co2(respiration_rate, heart_rate, spo2, people_count, max_people):
-    if respiration_rate > 25 or spo2 < 90 or heart_rate < 62 or heart_rate > 100 or people_count > max_people:
-        return 1000, "Critical"
-    elif respiration_rate > 18 or spo2 < 95 or heart_rate >= 100 or people_count == max_people:
-        return 700, "Warning"
+    # Base CO2 level based on number of people
+    base_co2 = 400 + (people_count * 100)
+    
+    # Adjust based on health parameters
+    if respiration_rate > 25 or spo2 < 90 or heart_rate < 62 or heart_rate > 100:
+        co2_level = base_co2 + 600  # Critical health condition
+    elif respiration_rate > 18 or spo2 < 95 or heart_rate >= 100:
+        co2_level = base_co2 + 300   # Warning health condition
     else:
-        return 400, "Normal"
+        co2_level = base_co2         # Normal
+    
+    # Cap the maximum CO2 level
+    co2_level = min(co2_level, 1200)
+    
+    # Determine status
+    if co2_level > CO2_CRITICAL_THRESHOLD or people_count > max_people:
+        return co2_level, "Critical"
+    elif co2_level > CO2_WARNING_THRESHOLD or people_count == max_people:
+        return co2_level, "Warning"
+    else:
+        return co2_level, "Normal"
 
 # --- Get max people based on area ---
 def get_max_people(area):
@@ -23,40 +45,63 @@ def get_max_people(area):
     else:
         return 25
 
-# --- HTML Audio Autoplay Function ---
-def autoplay_audio(file_path):
-    with open(file_path, "rb") as f:
-        audio_data = f.read()
-    b64_audio = base64.b64encode(audio_data).decode()
-    audio_html = f"""
-        <audio autoplay hidden>
-            <source src="data:audio/mp3;base64,{b64_audio}" type="audio/mp3">
-        </audio>
+# --- JavaScript Audio Alert ---
+def js_alert():
+    js_code = """
+    <script>
+    function playAlert() {
+        var audio = new Audio('https://assets.mixkit.co/sfx/preview/mixkit-alarm-digital-clock-beep-989.mp3');
+        audio.loop = true;
+        audio.play();
+        return audio;
+    }
+    window.alertAudio = playAlert();
+    </script>
     """
-    st.markdown(audio_html, unsafe_allow_html=True)
+    st.components.v1.html(js_code, height=0)
+
+def js_stop_alert():
+    st.components.v1.html("""
+    <script>
+    if (window.alertAudio) {
+        window.alertAudio.pause();
+        window.alertAudio.currentTime = 0;
+    }
+    </script>
+    """, height=0)
 
 # --- Streamlit UI ---
-st.title("🫁 CO₂ Level + Room Safety Simulation")
+st.title("🫁 Smart CO₂ Level Monitoring System")
+
+# Initialize session state
+if 'alarm_active' not in st.session_state:
+    st.session_state.alarm_active = False
 
 # --- Room Occupancy ---
 st.subheader("🏠 Room & Occupancy Details")
-room_length = st.number_input("Room Length (ft)", min_value=10, max_value=50, value=10, step=5)
-room_width = st.number_input("Room Width (ft)", min_value=10, max_value=50, value=10, step=5)
-people_count = st.number_input("Number of People in the Room", min_value=1, step=1)
+col1, col2 = st.columns(2)
+with col1:
+    room_length = st.number_input("Room Length (ft)", min_value=10, max_value=50, value=10, step=5)
+with col2:
+    room_width = st.number_input("Room Width (ft)", min_value=10, max_value=50, value=10, step=5)
 
+people_count = st.number_input("Number of People in the Room", min_value=1, step=1)
 room_area = room_length * room_width
 max_people = get_max_people(room_area)
 
-st.write(f"🧮 Room Area: {room_area} sq ft")
-st.write(f"👥 Max Recommended Occupancy: {max_people} people")
+st.info(f"""
+🧮 *Room Area:* {room_area} sq ft  
+👥 *Max Recommended Occupancy:* {max_people} people  
+👤 *Current Occupancy:* {people_count} people
+""")
 
 # --- Check overcrowding ---
 if people_count > max_people:
     st.error(f"🚨 Overcrowded! Room has {people_count} people (limit is {max_people}).")
 elif people_count == max_people:
-    st.warning(f"🚨 Room has {people_count} people, Limit Reached.")
+    st.warning(f"⚠ Room has {people_count} people (limit reached).")
 else:
-    st.info("✅ Occupancy is within safe limit.")
+    st.success("✅ Occupancy is within safe limit.")
 
 # --- Health Parameters ---
 st.subheader("🧍 Health Monitoring")
@@ -68,17 +113,45 @@ spo2 = st.slider("Oxygen Saturation (%)", 80, 100, 98)
 co2_level, status = simulate_co2(respiration_rate, heart_rate, spo2, people_count, max_people)
 
 # --- Display results ---
-st.metric("Simulated CO₂ Level", f"{co2_level} ppm")
-st.metric("Status", status)
+st.subheader("🌬 Air Quality Status")
+col1, col2 = st.columns(2)
+with col1:
+    st.metric("CO₂ Level", f"{co2_level} ppm", 
+              delta="Critical" if co2_level > CO2_CRITICAL_THRESHOLD else 
+                    "Warning" if co2_level > CO2_WARNING_THRESHOLD else "Normal")
+with col2:
+    status_placeholder = st.empty()
 
-# --- Play alarm only if critical or overcrowded ---
+# --- Alarm control ---
 if status == "Critical" or people_count > max_people:
-    st.error("⚠ Critical CO₂ Level! Immediate action required!")
-    autoplay_audio("alarm.mp3")
+    status_placeholder.error("🚨 CRITICAL: Immediate action required!")
+    if not st.session_state.alarm_active:
+        js_alert()
+        st.session_state.alarm_active = True
+elif status == "Warning" or people_count == max_people:
+    status_placeholder.warning("⚠ WARNING: Monitor closely")
+    if st.session_state.alarm_active:
+        js_stop_alert()
+        st.session_state.alarm_active = False
 else:
-    # Use a 1-second silent MP3 to stop alarm
-    autoplay_audio("silent.mp3")
-    if status == "Warning" or people_count == max_people:
-        st.warning("🚨 Elevated CO₂ Level! Monitor closely.")
-    else:
-        st.success("✅ CO₂ Level is Normal.")
+    status_placeholder.success("✅ NORMAL: All parameters OK")
+    if st.session_state.alarm_active:
+        js_stop_alert()
+        st.session_state.alarm_active = False
+
+# Add manual alarm control
+st.subheader("🔊 Alarm Controls")
+if st.button("Test Alarm"):
+    js_alert()
+    st.session_state.alarm_active = True
+    time.sleep(2)
+    js_stop_alert()
+    st.session_state.alarm_active = False
+
+if st.button("Stop Alarm"):
+    js_stop_alert()
+    st.session_state.alarm_active = False
+
+# Add automatic refresh
+time.sleep(CHECK_INTERVAL)
+st.experimental_rerun()
