@@ -1,5 +1,4 @@
 import streamlit as st
-
 def simulate_co2(respiration_rate, heart_rate, spo2, people_count, max_people):
     if respiration_rate > 25 or spo2 < 90 or heart_rate < 62 or heart_rate > 100 or people_count > max_people:
         return 1000, "Critical"
