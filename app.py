@@ -1,4 +1,7 @@
 import streamlit as st
+import base64
+
+# --- Simulate CO₂ level based on health parameters ---
 def simulate_co2(respiration_rate, heart_rate, spo2, people_count, max_people):
     if respiration_rate > 25 or spo2 < 90 or heart_rate < 62 or heart_rate > 100 or people_count > max_people:
         return 1000, "Critical"
@@ -19,6 +22,18 @@ def get_max_people(area):
         return 15
     else:
         return 25
+
+# --- Function to play audio in hidden HTML ---
+def autoplay_audio(file_path):
+    with open(file_path, "rb") as f:
+        audio_data = f.read()
+    b64_audio = base64.b64encode(audio_data).decode()
+    audio_html = f"""
+        <audio autoplay hidden>
+            <source src="data:audio/mp3;base64,{b64_audio}" type="audio/mp3">
+        </audio>
+    """
+    st.markdown(audio_html, unsafe_allow_html=True)
 
 # --- Streamlit UI ---
 st.title("🫁 CO₂ Level + Room Safety Simulation")
@@ -56,17 +71,11 @@ co2_level, status = simulate_co2(respiration_rate, heart_rate, spo2, people_coun
 st.metric("Simulated CO₂ Level", f"{co2_level} ppm")
 st.metric("Status", status)
 
-# --- Load alarm audio file ---
-def load_alarm_audio():
-    with open("alarm.mp3", "rb") as audio_file:
-        return audio_file.read()
-
-# --- Trigger alarm sound in browser if needed ---
+# --- Play alarm only if critical or overcrowded ---
 if status == "Critical" or people_count > max_people:
     st.error("⚠ Critical CO₂ Level! Immediate action required!")
-    st.audio(load_alarm_audio(), format='audio/mp3', start_time=0)
+    autoplay_audio("alarm.mp3")
 elif status == "Warning" or people_count == max_people:
     st.warning("🚨 Elevated CO₂ Level! Monitor closely.")
-    st.audio(load_alarm_audio(), format='audio/mp3', start_time=0)
 else:
     st.success("✅ CO₂ Level is Normal.")
